@@ -35,12 +35,12 @@ while true; do
 	sleep 1
 done
 
-# Get the path where playbook is located so we look for a requirements file on the same dir.
-playbook_dir="$(dirname "$playbook")"
+# Get to where playbook is located so we look for a requirements file on the same dir.
+cd "$(dirname "$playbook")" || exit 1
 
 # Download required roles, if any
-test -f "$playbook_dir/requirements.yml" && \
-	ansible-galaxy install --ignore-errors --role-file="$playbook_dir/requirements.yml" > /dev/null
+test -f requirements.yml && \
+	ansible-galaxy install --ignore-errors --role-file=requirements.yml > /dev/null
 
 # Run the playbook
 ansible-playbook --inventory="$host," --user="$user" \
