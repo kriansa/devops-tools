@@ -1,0 +1,191 @@
+#!/bin/sh
+#
+# This is a small utility that helps with Docker dependency chain. When you want a container to wait
+# for another resource to start before doing anything, you can use this and enforce that dependency
+# at runtime.
+#
+# It currently can handle waiting for TCP sockets and file/folder existence.
+#
+# This application requires netcat package.
+
+main() {
+	parse_cli "$@"
+
+	if ! wait_for_all_resources; then
+		error "Timeout reached while waiting for the resources to become available!"
+		exit 1
+	fi
+
+	# Execute the program, if passed as argument
+	# shellcheck disable=2086
+	test -n "$CMDLINE" && exec $CMDLINE
+
+	# This line will only be reached if there's not $CMDLINE
+	exit 0
+}
+
+set_defaults() {
+	TIMEOUT=15
+	RESOURCES=
+	CMDLINE=
+}
+
+usage() {
+	echo "usage: wait-for tcp://host:port, [file:///filename...] [-t timeout] [-- command args]"
+	echo "	-t TIMEOUT | --timeout=timeout			Timeout in seconds, zero for no timeout"
+	echo "	-- COMMAND ARGS										 Execute command with args after the test finishes"
+}
+
+error() {
+	echo "[wait-for] $*" 1>&2
+}
+
+# This function will wait for TCP availability of the services passed as
+# parameter for a maximum of $timeout seconds. It will return 0 if all services
+# are responding, and 1 otherwise.
+#
+# Arguments
+#	 1 - Resources (list with every resource in URI format)
+# Globals
+#	 TIMEOUT - How much seconds it will wait for the resources until it fails
+#	 RESOURCES - The list of resources using a URI format (e.g. tcp://host:port)
+wait_for_all_resources() {
+	for _ in $(seq "$TIMEOUT"); do
+		# Clear the pids variable
+		pids=
+
+		for resource in $RESOURCES; do
+			case $resource in
+				tcp://*:*)
+					wait_for_tcp_socket "$resource" &
+					pids="$pids $!"
+					break
+					;;
+
+				file://*)
+					wait_for_file_existence "$resource" &
+					pids="$pids $!"
+					break
+					;;
+			esac
+		done
+
+		failure=0
+		for pid in $pids; do wait "$pid"; test $? != 0 && failure=1; done
+		test $failure -eq 0 && return 0
+	done
+
+	return 1
+}
+
+# Opens a TCP connection with the host and port to check if it's open. It will
+# keep trying for 1 second, and if it doesn't reach the host, it will fail and
+# return an error exit code
+#
+# Arguments
+#	 1 - Host address in URI format (e.g. tcp://host:port)
+#
+# shellcheck disable=2039
+wait_for_tcp_socket() {
+	local address=${1#*tcp://}
+
+	local host=${address%:*}
+	local port=${address#*:}
+
+	# Netcat onto that host:port with a timeout of 1 second
+	# Sometimes, netcat can fail too fast due to a DNS resolution, for
+	# instance, and it might not wait the whole second as expected with the
+	# -w argument. This might result in a checking that might fail too fast
+	# and don't respect our timeout. To prevent that to happen, we will
+	# measure the duration of the nc command, and if it fails too fast, we will
+	# mannually sleep one second (as expected) for each iteration.
+	local time_start; time_start=$(date +%s)
+	nc -zw 1 "$host" "$port" > /dev/null 2>&1
+	local status=$?
+
+	# Manually sleep one second when it failed too fast
+	local time_end; time_end=$(date +%s)
+	if [ $status = 1 ] && [ "$time_start" = "$time_end" ]; then
+		sleep 1
+	fi
+
+	return $status
+}
+
+# Checks whether a specified file exists. If it doesn't this function will
+# return an error code and it will sleep for 1 second. This is required so that
+# the next iteration have higher chances of succeeding (i.e. this file is still
+# being created by another application)
+#
+# Arguments
+#	 1 - filename in the URI format (e.g. file:///var/log/filename.log)
+#
+# shellcheck disable=2039
+wait_for_file_existence() {
+	local file=${1#*file://}
+
+	# Checks for existence of this file
+	test -e "$file"
+	local status=$?
+
+	# Manually sleep one seconds if it fails
+	test $status -eq 1 && sleep 1
+
+	return $status
+}
+
+# Parse the command line and set the global variables to the arguments needed
+# for the command to run properly
+#
+# Arguments
+#	 All arguments passed to this CLI by the user
+parse_cli() {
+	set_defaults
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			tcp://*:*|file://*)
+				RESOURCES="$RESOURCES $1"
+				shift 1
+				;;
+
+			-t)
+				TIMEOUT="$2"
+				if [ "$TIMEOUT" = "" ]; then break; fi
+				shift 2
+				;;
+
+			--timeout=*)
+				TIMEOUT="${1#*=}"
+				shift 1
+				;;
+
+			--)
+				shift
+				break
+				;;
+
+			--help)
+				usage
+				exit
+				;;
+
+			*)
+				error "Unknown argument: $1"
+				usage
+				exit 1
+				;;
+		esac
+	done
+
+	if [ -z "$RESOURCES" ]; then
+		error "Error: you need to provide at least one resource to test."
+		usage 2
+	fi
+
+	# The cmdline is everything past the --
+	CMDLINE="$*"
+}
+
+# Run!
+main "$@"

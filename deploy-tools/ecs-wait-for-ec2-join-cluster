@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# This is a small wrapper around AWS CLI to ensure that a EC2 instance has joined the ECS cluster
+# before returning.
+#
+# It's useful to be used on deployments where you would want to wait for that before doing another
+# action, such as invoking a ECS RunTask.
+#
+# Usage: $0 <cluster_arn> <instance_id>
+
+cluster_arn=$1
+instance_id=$2
+
+while true; do
+	instances_output=$(aws ecs list-container-instances --cluster "$cluster_arn")
+	test $? != 0 && exit 1 
+
+	# List the ARNs
+	instances_arns=$(echo "$instances_output" | jq '.containerInstanceArns[]' | xargs)
+
+	# If no instances are available at the custer, let's save one API call and
+	# wait for the next iteration
+	if [ "$instances_arns" = "" ]; then
+		sleep 5
+		continue
+	fi
+
+	# Make one API call to ECS with all available instances for that cluster
+	container_instances=$(aws ecs describe-container-instances \
+		--cluster "$cluster_arn" --container-instances "$instances_arns")
+	test $? != 0 && exit 1 
+
+	# Then figures whether our instanceId is already part of that cluster
+	container_instance_arn=$(echo "$container_instances" | \
+		jq ".containerInstances[] | select(.ec2InstanceId == \"${instance_id}\") .containerInstanceArn")
+
+	if [ "$container_instance_arn" != "" ]; then
+		exit
+	fi
+
+	sleep 5
+done

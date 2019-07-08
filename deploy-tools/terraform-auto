@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+#
+# This is a wrapper around default terraform command that adds automation friendy functionalities to
+# it. It adds extra options while keeping compatibility with all terraform options.
+#
+# Features:
+#
+# 1. Load shell variables from a `.env` file using the parameter `--environment-file`
+# 2. Work around the lack of support of environment variables on backend definition. Hence you must
+#		use a backend.tf-template file and use shell variables like `$MY_ENV_VAR`. The file name can be
+#		passed throgh a parameter `--backend-template-file`
+# 3. Enable auto-approval when detected that the CLI is being run as non-interactive shell. That can
+#		be forced when using the flag `--no-ui`
+# 4. Automatically initializes your tf directory so you don't need to remember to run
+#		`terraform init` on the first time you run Terraform.
+
+main() {
+	declare NO_UI="" ENV_FILE="" BACKEND_TEMPLATE_FILE="" SHOW_HELP="" TERRAFORM_PARAMS=()
+	parse_parameters "$@"
+
+	# Load environment variables
+	test -n "$ENV_FILE" && load_env
+
+	# Configure backend with env variables
+	test -n "$BACKEND_TEMPLATE_FILE" && configure_backend
+
+	# Only enable auto-approve when using apply in non-interactive shells
+	test -n "$NO_UI" && test "$1" = "apply" && flags=("-auto-approve" "-input=false")
+
+	# Run terraform
+	terraform "${TERRAFORM_PARAMS[@]}" "${flags[@]}"
+
+	# If this is a terraform help command, let's append our own help to the output
+	test -n "$SHOW_HELP" && usage
+}
+
+usage() {
+	echo
+	printf "Extra options provided by \e[1mterraform-auto\e[0m:\n"
+	echo
+	echo "  --no-ui                          Disable manual approvals when applying configurations."
+	echo "                                   This option is implicitly turned on when you run this"
+	echo "                                   using a non-interactive shell."
+	echo
+	echo "  --environment-file=<file>        Point to a file with a list of shell variables to"
+	echo "                                   be parsed by Terraform and its inner subprograms"
+	echo "                                   such as local provison blocks."
+	echo
+	echo "  --backend-template-file=<file>   Work around a Terraform limitation and allow you to"
+	echo "                                   use shell variables inside a backend config file."
+	echo "                                   To use it, you will need to have your backend file using"
+	echo "                                   a different extension than tf, so that it won't conflict"
+	echo "                                   with Terraform (recommended: backend.tf-template)"
+	echo
+	echo "  --help                           Show this message."
+	exit
+}
+
+parse_parameters() {
+	# When no parameter is passed, --help is assumed
+	if test $# -eq 0; then
+		SHOW_HELP=true
+	fi
+
+	# NO_UI is implicitly set when running using a non-interactive shell
+	if ! test -t 0; then
+		NO_UI=true
+	fi
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--no-ui) NO_UI=true; shift 1 ;;
+			--backend-template-file=*) BACKEND_TEMPLATE_FILE="${1#*=}"; shift ;;
+			--environment-file=*) ENV_FILE="${1#*=}"; shift ;;
+			--help|-help) SHOW_HELP=true; TERRAFORM_PARAMS+=("$1"); shift ;;
+
+			# Handle invalid arguments
+			--backend-template-file)
+				echo "Please use --backend-template-file=<file> with the '='"; exit 1 ;;
+			--environment-file)
+				echo "Please use --environment-file=<file> with the '='"; exit 1 ;;
+
+			# All other parameters are valid Terraform parameters
+			*) TERRAFORM_PARAMS+=("$1"); shift ;;
+		esac
+	done
+}
+
+load_env() {
+	# Ensure file is readable
+	if ! test -r "$ENV_FILE"; then
+		echo "File '$ENV_FILE' is not readable!"
+		exit 1
+	fi
+
+	# Let's get the current variables before modifying the scope
+	env="$(printenv | sed -E -e 's/"/\\"/g' -e 's/=(.*)/="\1"/')"
+
+	# Then enable auto-export
+	set -a
+
+	# Now we run the .env, exporting all defined variables
+	# shellcheck disable=SC1090
+	source "$ENV_FILE" || exit 1
+
+	# Then we disable auto-export
+	set +a
+
+	# Re-set the previous variables to ensure previously exported variables have higher precedence
+	eval "$env"
+	unset env
+}
+
+configure_backend() {
+	# Ensure file is readable
+	if ! test -r "$BACKEND_TEMPLATE_FILE"; then
+		echo "File '$BACKEND_TEMPLATE_FILE' is not readable!"
+		exit 1
+	fi
+
+	# Store exit codes
+	local status
+
+	# Replace the variables on the template file (and ensure it's ephemeral so that people don't
+	# accidentally edit them)
+	local backend_output_file; backend_output_file="$(dirname "$BACKEND_TEMPLATE_FILE")/backend.tf"
+	# shellcheck disable=SC2064
+	trap "rm '$backend_output_file'" EXIT
+	envsubst < "$BACKEND_TEMPLATE_FILE" > "$backend_output_file"; status=$?
+	if [ $status -ne 0 ]; then
+		echo "envsubst failed!"
+		exit 1
+	fi
+
+	# Then initializes it
+	echo "Configuring backend. Wait..."
+	terraform init -input=false "$(dirname "$BACKEND_TEMPLATE_FILE")" > /dev/null || exit 1
+
+	echo "Backend configured!"
+}
+
+main "$@"

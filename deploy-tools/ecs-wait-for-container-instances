@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# This is just a small wrapper around AWS CLI to determine whether the given ECS Cluster has running
+# container instances. This is particularly useful for running tasks on clusters in the middle of a
+# EC2 restack. This script will ensure that when it finished, it means that the cluster is ready
+# and the task can run.
+#
+# Usage: $0 <cluster_arn> [<minimum_amount>]
+
+cluster_arn=$1
+minimum_amount=${2:-1}
+
+while true; do
+	result=$(aws ecs list-container-instances --cluster "$cluster_arn")
+	test $? != 0 && exit 1 
+
+	amount=$(($(echo "$result" | wc -l) - 4))
+
+	test "$amount" -ge "$minimum_amount" && exit
+	sleep 5
+done
