@@ -3,8 +3,7 @@
 This is a set of scripts I built to help _me_ to work with automation & deployment stuff. It has
 both scripts to help you as a user to get something faster than using vanilla tools, as well as
 scripts to make working with _containerized_ applications easier, such as dealing with [waiting for
-resources](https://docs.docker.com/compose/startup-order/), a common problem when working with
-Docker (or containers in general).
+resources](https://docs.docker.com/compose/startup-order/), a common problem when working with Docker (or containers in general).
 
 ## What's available
 
@@ -34,10 +33,10 @@ You can just pick what you need and copy it or install them using one of the met
 
 #### Arch Linux
 
-Build this [PKGBUILD](https://github.com/kriansa/PKGBUILDs/blob/master/pkgs/devops-tools/PKGBUILD):
+Build this [PKGBUILD](https://github.com/kriansa/PKGBUILDs/blob/master/pkgs/devops-tools-git/PKGBUILD):
 
 ```shell
-$ wget https://raw.githubusercontent.com/kriansa/PKGBUILDs/master/pkgs/devops-tools/PKGBUILD
+$ wget https://raw.githubusercontent.com/kriansa/PKGBUILDs/master/pkgs/devops-tools-git/PKGBUILD
 $ makepkg -fsric
 ```
 
@@ -53,9 +52,10 @@ in your `$PATH`. If you want proper packages, [pull-requests are welcome!](CONTR
 RUN apt-get update && apt-get install -y wget
 
 ARG DOTC_VERSION v1.0.0 # Please refer to the Releases page to get the latest one
-RUN wget https://github.com/kriansa/devops-tools/releases/download/$DOTC_VERSION/container-tools.tar.gz \
-    && tar -C /usr/local/bin -xzvf container-tools.tar.gz \
-    && rm container-tools.tar.gz
+RUN wget https://github.com/kriansa/devops-tools/archive/$DOTC_VERSION.tar.gz \
+	&& tar -xzvpf $DOTC_VERSION.tar.gz \
+	&& cp $DOTC_VERSION/container-tools/* /usr/local/bin
+	&& rm -rf $DOTC_VERSION.tar.gz $DOTC_VERSION
 ```
 
 ## Contributing
