@@ -45,4 +45,4 @@ test -f requirements.yml && \
 # Run the playbook
 ansible-playbook --inventory="$host," --user="$user" \
 	--ssh-common-args="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
-	"$playbook"
+	"$(basename "$playbook")"
