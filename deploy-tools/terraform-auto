@@ -18,14 +18,17 @@ main() {
 	declare NO_UI="" ENV_FILE="" BACKEND_TEMPLATE_FILE="" SHOW_HELP="" TERRAFORM_PARAMS=()
 	parse_parameters "$@"
 
-	# Load environment variables
-	test -n "$ENV_FILE" && load_env
+	# No need to configure everything when we only want to show the help message
+	if test -z "$SHOW_HELP"; then
+		# Load environment variables
+		test -n "$ENV_FILE" && load_env
 
-	# Configure backend with env variables
-	test -n "$BACKEND_TEMPLATE_FILE" && configure_backend
+		# Configure backend with env variables
+		test -n "$BACKEND_TEMPLATE_FILE" && configure_backend
 
-	# Only enable auto-approve when using apply in non-interactive shells
-	test -n "$NO_UI" && test "$1" = "apply" && flags=("-auto-approve" "-input=false")
+		# Only enable auto-approve when using apply in non-interactive shells
+		test -n "$NO_UI" && test "$1" = "apply" && flags=("-auto-approve" "-input=false")
+	fi
 
 	# Run terraform
 	terraform "${TERRAFORM_PARAMS[@]}" "${flags[@]}"
