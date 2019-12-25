@@ -48,18 +48,17 @@ in your `$PATH`. If you want proper packages, [pull-requests are welcome!](CONTR
 
 ### :package: Container tools
 
+To use the contents of the container-tools on your Docker image, just add the snippet below to your
+Dockerfile. First, ensure you have `curl` installed on your base image.
+
 Beware to replace the `DOTC_VERSION` by the actual version you want
 [here](https://github.com/kriansa/devops-tools/releases).
 
 ```Dockerfile
-# If you're using Ubuntu or Debian. If you're using another base image, install wget
-RUN apt-get update && apt-get install -y wget
-
+# Ensure you have curl installed on your base image.
 ARG DOTC_VERSION vX.Y.Z # Please refer to the Releases page to get the latest one
-RUN wget https://github.com/kriansa/devops-tools/archive/$DOTC_VERSION.tar.gz \
-	&& tar -xzvpf $DOTC_VERSION.tar.gz \
-	&& cp $DOTC_VERSION/container-tools/* /usr/local/bin
-	&& rm -rf $DOTC_VERSION.tar.gz $DOTC_VERSION
+RUN curl -L https://github.com/kriansa/devops-tools/releases/download/$DOTC_VERSION/container-tools.tar.gz |\
+	tar -xzC /usr/local/bin \
 ```
 
 ## Contributing
