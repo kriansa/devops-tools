@@ -31,10 +31,12 @@ main() {
 	fi
 
 	# Run terraform
-	terraform "${TERRAFORM_PARAMS[@]}" "${flags[@]}"
+	terraform "${TERRAFORM_PARAMS[@]}" "${flags[@]}"; local status=$?
 
 	# If this is a terraform help command, let's append our own help to the output
 	test -n "$SHOW_HELP" && usage
+
+	exit $status
 }
 
 usage() {
